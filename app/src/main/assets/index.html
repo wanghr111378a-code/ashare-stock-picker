@@ -359,8 +359,39 @@ load();switchTab(0);
   <p>回测状态：等待历史数据验证</p>
   <p>最大回撤参考目标：25%</p>
 
-  <button type="button" onclick="alert('回测引擎已加载，历史数据验证模块尚未完成。')">
-    检查回测模块
+  <button type="button" onclick="runHistoryTest()">
+  测试510300历史数据
+</button>
+
+<div id="history-test-result" style="margin-top:12px;">
+  尚未测试历史数据
+</div>
+
+<script>
+async function runHistoryTest() {
+  const box = document.getElementById("history-test-result");
+  box.innerHTML = "正在获取510300历史日K线，请稍候……";
+
+  const days = Number(
+    document.getElementById("backtest-period").value
+  );
+
+  const result = await testHistoryData510300(days);
+
+  if (!result.success) {
+    box.innerHTML =
+      "数据验证未通过：" + result.message;
+    return;
+  }
+
+  box.innerHTML =
+    "数据获取成功<br>" +
+    "股票：沪深300ETF（510300）<br>" +
+    "K线数量：" + result.count + "<br>" +
+    "开始日期：" + result.firstDate + "<br>" +
+    "结束日期：" + result.lastDate;
+}
+</script>
   </button>
 </section>
 <script src="backtest.js"></script>
