@@ -114,42 +114,20 @@ async function scanMarket(){
     }
   }
 }
-    const baseUrl="https://push2.eastmoney.com/api/qt/clist/get";
-const pageSize=100;
-const allRows=[];
-let totalCount=0;
+    const url="https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=5000&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f2,f3,f5,f6,f8,f12,f14,f15,f16,f17,f18";
 
-for(let page=1;page<=100;page++){
-  const url=baseUrl+
-    "?pn="+page+
-    "&pz="+pageSize+
-    "&po=1&np=1&fltt=2&invt=2"+
-    "&fid=f3"+
-    "&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23"+
-    "&fields=f2,f3,f5,f6,f8,f12,f14,f15,f16,f17,f18";
+const response=await fetch(url);
 
-  const result=await fetchWithRetry(url,3);
-  const data=result?.data;
-  const rows=data?.diff;
-
-  if(page===1){
-    totalCount=Number(data?.total)||0;
-  }
-
-  if(!Array.isArray(rows)||rows.length===0){
-    break;
-  }
-
-  allRows.push(...rows);
-
-  if(allRows.length>=totalCount){
-    break;
-  }
-
-  await new Promise(resolve=>setTimeout(resolve,150));
+if(!response.ok){
+  throw new Error("行情服务器响应异常");
 }
 
-const rows=allRows;
+const result=await response.json();
+const rows=result?.data?.diff;
+
+if(!Array.isArray(rows)||rows.length===0){
+  throw new Error("没有取得股票数据");
+}
 if(!Array.isArray(rows)||rows.length===0){
   throw new Error("没有取得股票数据");
 }
