@@ -84,51 +84,20 @@ function switchTab(i){current=i;document.querySelectorAll(".tabs button").forEac
 async function scanMarket(){
   const status=document.getElementById("scanStatus");
   status.textContent="正在连接行情服务器，请稍候……";
+
   try{
-    
     const url="https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=5000&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f2,f3,f5,f6,f8,f12,f14,f15,f16,f17,f18";
 
-    const response=await fetch(url,{
-      method:"GET",
-      cache:"no-store"
-    });
-
-    if(!response.ok){
-      throw new Error("行情服务器响应异常");
-    }
+    const response=await fetch(url);
+    if(!response.ok) throw new Error("行情服务器响应异常");
 
     const result=await response.json();
+    const rows=result?.data?.diff;
 
-
-    }catch(error){
-      if(attempt===retries){
-        throw error;
-      }
-
-      await new Promise(resolve=>
-        setTimeout(resolve,attempt*1000)
-      );
+    if(!Array.isArray(rows)||rows.length===0){
+      throw new Error("没有取得股票数据");
     }
-  }
-}
-    const url="https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=5000&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f2,f3,f5,f6,f8,f12,f14,f15,f16,f17,f18";
 
-const response=await fetch(url);
-
-if(!response.ok){
-  throw new Error("行情服务器响应异常");
-}
-
-const result=await response.json();
-const rows=result?.data?.diff;
-
-if(!Array.isArray(rows)||rows.length===0){
-  throw new Error("没有取得股票数据");
-}
-if(!Array.isArray(rows)||rows.length===0){
-  throw new Error("没有取得股票数据");
-}
-    if(!Array.isArray(rows)||rows.length===0) throw new Error("没有取得股票数据");
     const stocks=rows.map(x=>({
       code:String(x.f12||""),
       name:String(x.f14||""),
@@ -139,126 +108,61 @@ if(!Array.isArray(rows)||rows.length===0){
       high:Number(x.f15),
       low:Number(x.f16)
     })).filter(s=>
-      s.code&&
-      s.name&&
+      s.code&&s.name&&
       !/^(ST|\*ST|退)/i.test(s.name)&&
-      Number.isFinite(s.price)&&
-      s.price>=5&&
-      s.price<=300&&
+      Number.isFinite(s.price)&&s.price>=5&&s.price<=300&&
       Number.isFinite(s.change)&&
-      Number.isFinite(s.amount)&&
-      s.amount>0&&
-      Number.isFinite(s.turnover)&&
-      s.turnover>=0&&
-      Number.isFinite(s.high)&&
-      Number.isFinite(s.low)&&
-      s.high>=s.price&&
-      s.low<=s.price&&
-      s.low>0
+      Number.isFinite(s.amount)&&s.amount>0&&
+      Number.isFinite(s.turnover)&&s.turnover>=0&&
+      Number.isFinite(s.high)&&Number.isFinite(s.low)&&
+      s.high>=s.price&&s.low<=s.price&&s.low>0
     );
+
     if(!stocks.length) throw new Error("没有可用的股票数据");
-        const getRiskStatus=s=>{
-      if(!Number.isFinite(s.price)||s.price<=0||
-         !Number.isFinite(s.change)||
-         !Number.isFinite(s.high)||
-         !Number.isFinite(s.low)){
-        return "行情异常";
-      }
-      const code=String(s.code);
-      const isBJ=/^(4|8|92)/.test(code);
-      const isGrowth=/^30/.test(code);
-      const isSTAR=/^68/.test(code);
-      const limit=isBJ?30:(isGrowth||isSTAR?20:10);
-      if(s.change>=limit-1) return "接近涨停";
-      if(s.change<=-limit+1) return "接近跌停";
-      return "正常";
-    };
-   const scoreBeijing=s=>
-      (s.change>=2&&s.change<=8?30:0)+
-      (s.amount>=50000?30:s.amount>=20000?20:0)+
-      (s.turnover>=3&&s.turnover<=15?25:0)+
-      (s.price>=s.high*0.97?15:0);
-    const scoreTuixue=s=>
-      (s.change>=3&&s.change<=9?35:0)+
-      (s.amount>=30000?25:s.amount>=10000?15:0)+
-      (s.turnover>=5&&s.turnover<=20?25:0)+
-      (s.change>0?15:0);
-    const scoreYangjia=s=>
-      (s.change>=1&&s.change<=7?25:0)+
-      (s.amount>=50000?30:s.amount>=20000?20:0)+
-      (s.turnover>=2&&s.turnover<=12?25:0)+
-      (s.price>=s.low*1.03?20:0);
+
     const configs=[
-      {name:"北京炒家策略",score:scoreBeijing},
-      {name:"退学炒股策略",score:scoreTuixue},
-      {name:"炒股养家策略",score:scoreYangjia}
+      {
+        score:s=>
+          (s.change>=2&&s.change<=8?30:0)+
+          (s.amount>=50000?30:s.amount>=20000?20:0)+
+          (s.turnover>=3&&s.turnover<=15?25:0)+
+          (s.price>=s.high*0.97?15:0)
+      },
+      {
+        score:s=>
+          (s.change>=3&&s.change<=9?35:0)+
+          (s.amount>=30000?25:s.amount>=10000?15:0)+
+          (s.turnover>=5&&s.turnover<=20?25:0)+
+          (s.change>0?15:0)
+      },
+      {
+        score:s=>
+          (s.change>=1&&s.change<=7?25:0)+
+          (s.amount>=50000?30:s.amount>=20000?20:0)+
+          (s.turnover>=2&&s.turnover<=12?25:0)+
+          (s.price>=s.low*1.03?20:0)
+      }
     ];
-        configs.forEach((cfg,i)=>{
+
+    configs.forEach((cfg,i)=>{
       books[i]=stocks.map(s=>({
         ...s,
         score:cfg.score(s),
-        risk:getRiskStatus(s)
+        risk:"待评估"
       }))
       .filter(s=>s.score>=40)
       .sort((a,b)=>b.score-a.score)
       .slice(0,20);
     });
 
-    const codes=[...new Set(
-      books.flat().map(s=>s.code)
-    )];
-
-    const trendCache={};
-    let nextIndex=0;
-
-    async function trendWorker(){
-      while(nextIndex<codes.length){
-        const code=codes[nextIndex++];
-        trendCache[code]=await getDailyTrend(code);
-      }
-    }
-
-    await Promise.all(
-      Array.from(
-        {length:Math.min(5,codes.length)},
-        ()=>trendWorker()
-      )
-    );
-
-    books.forEach((list,i)=>{
-      list.forEach(s=>{
-        const t=trendCache[s.code];
-        s.trendData=t;
-
-        if(!t) return;
-
-        const trendBonus=[
-          t.trend==="多头排列"?10:
-          t.trend==="空头排列"?-10:0,
-
-          t.trend==="多头排列"?12:
-          t.trend==="空头排列"?-12:0,
-
-          t.trend==="多头排列"?8:
-          t.trend==="空头排列"?-8:0
-        ][i];
-
-        const volumeBonus=
-          t.volumeRatio!==null&&t.volumeRatio>=1.5?5:0;
-
-        s.score=Math.max(
-          0,
-          Math.min(100,s.score+trendBonus+volumeBonus)
-        );
-      });
-
-      list.sort((a,b)=>b.score-a.score);
-    });
     save();
     switchTab(current);
-    status.textContent="扫描成功："+stocks.length+"只股票；每个策略显示前20名。数据来源：东方财富公开行情，可能存在延迟。获取时间："+new Date().toLocaleString();
+
+    status.textContent="扫描成功："+stocks.length+
+      "只股票；每个策略显示前20名。";
+
   }catch(error){
-    status.textContent="行情获取失败："+error.message+"。未使用模拟数据，请稍后重试。";
+    status.textContent="行情获取失败："+error.message;
   }
 }
  async function getDailyTrend(code){
