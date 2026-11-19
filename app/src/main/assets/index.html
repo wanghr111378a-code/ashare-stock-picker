@@ -154,21 +154,129 @@ async function scanMarket(){
       {name:"退学炒股策略",score:scoreTuixue},
       {name:"炒股养家策略",score:scoreYangjia}
     ];
-    configs.forEach((cfg,i)=>{
+        configs.forEach((cfg,i)=>{
       books[i]=stocks.map(s=>({
-          ...s,
-          score:cfg.score(s),
-          risk:getRiskStatus(s)
-        }))
-        .filter(s=>s.score>=40)
-        .sort((a,b)=>b.score-a.score)
-        .slice(0,20);
+        ...s,
+        score:cfg.score(s),
+        risk:getRiskStatus(s)
+      }))
+      .filter(s=>s.score>=40)
+      .sort((a,b)=>b.score-a.score)
+      .slice(0,20);
+    });
+
+    const codes=[...new Set(
+      books.flat().map(s=>s.code)
+    )];
+
+    const trendCache={};
+    let nextIndex=0;
+
+    async function trendWorker(){
+      while(nextIndex<codes.length){
+        const code=codes[nextIndex++];
+        trendCache[code]=await getDailyTrend(code);
+      }
+    }
+
+    await Promise.all(
+      Array.from(
+        {length:Math.min(5,codes.length)},
+        ()=>trendWorker()
+      )
+    );
+
+    books.forEach((list,i)=>{
+      list.forEach(s=>{
+        const t=trendCache[s.code];
+        s.trendData=t;
+
+        if(!t) return;
+
+        const trendBonus=[
+          t.trend==="多头排列"?10:
+          t.trend==="空头排列"?-10:0,
+
+          t.trend==="多头排列"?12:
+          t.trend==="空头排列"?-12:0,
+
+          t.trend==="多头排列"?8:
+          t.trend==="空头排列"?-8:0
+        ][i];
+
+        const volumeBonus=
+          t.volumeRatio!==null&&t.volumeRatio>=1.5?5:0;
+
+        s.score=Math.max(
+          0,
+          Math.min(100,s.score+trendBonus+volumeBonus)
+        );
+      });
+
+      list.sort((a,b)=>b.score-a.score);
     });
     save();
     switchTab(current);
     status.textContent="扫描成功："+stocks.length+"只股票；每个策略显示前20名。数据来源：东方财富公开行情，可能存在延迟。获取时间："+new Date().toLocaleString();
   }catch(error){
     status.textContent="行情获取失败："+error.message+"。未使用模拟数据，请稍后重试。";
+  }
+}
+ async function getDailyTrend(code){
+  try{
+    const market=/^(6)/.test(code)?1:0;
+    const url="https://push2his.eastmoney.com/api/qt/stock/kline/get"+
+      "?secid="+market+"."+encodeURIComponent(code)+
+      "&fields1=f1,f2,f3,f4,f5,f6"+
+      "&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61"+
+      "&klt=101&fqt=1&beg=0&end=20500101&lmt=30";
+
+    const response=await fetch(url);
+    if(!response.ok) throw new Error("K线请求失败");
+
+    const result=await response.json();
+    const rows=result?.data?.klines;
+
+    if(!Array.isArray(rows)||rows.length<20) return null;
+
+    const bars=rows.map(x=>{
+      const a=x.split(",");
+      return {
+        date:a[0],
+        close:Number(a[2]),
+        volume:Number(a[5])
+      };
+    }).filter(x=>
+      Number.isFinite(x.close)&&x.close>0&&
+      Number.isFinite(x.volume)&&x.volume>=0
+    );
+
+    if(bars.length<20) return null;
+
+    const avg=n=>{
+      const arr=bars.slice(-n).map(x=>x.close);
+      return arr.reduce((a,b)=>a+b,0)/arr.length;
+    };
+
+    const ma5=avg(5);
+    const ma10=avg(10);
+    const ma20=avg(20);
+    const avgVol5=bars.slice(-6,-1)
+      .reduce((a,b)=>a+b.volume,0)/5;
+    const volumeRatio=avgVol5>0?
+      bars[bars.length-1].volume/avgVol5:null;
+
+    return {
+      ma5,ma10,ma20,
+      volumeRatio,
+      trend:ma5>ma10&&ma10>ma20?
+        "多头排列":
+        ma5<ma10&&ma10<ma20?
+        "空头排列":"均线交错",
+      klineDate:bars[bars.length-1].date
+    };
+  }catch(error){
+    return null;
   }
 }
 function addStock(){
@@ -210,6 +318,20 @@ return `<div class="stock">
 <span class="risk">风险：${safe(s.risk||"未评估")}</span>
 <p>现价：${fmt(s.price)}元　涨幅：${Number(s.change).toFixed(2)}%</p>
 <small>成交额：${Number(s.amount).toFixed(0)}万元　换手率：${Number(s.turnover).toFixed(2)}%</small>
+${s.trendData?`
+<p><strong>历史行情分析</strong></p>
+<small>
+均线趋势：${safe(s.trendData.trend)}<br>
+MA5：${s.trendData.ma5.toFixed(2)}　
+MA10：${s.trendData.ma10.toFixed(2)}　
+MA20：${s.trendData.ma20.toFixed(2)}<br>
+5日量比：${s.trendData.volumeRatio===null?"暂无":s.trendData.volumeRatio.toFixed(2)}
+<br>日K线日期：${safe(s.trendData.klineDate)}
+</small>
+`:`
+<p><strong>历史行情分析</strong></p>
+<small>历史K线暂不可用，未生成趋势信号</small>
+`}
 <p><strong>V1.2模型参考（元）</strong></p>
 <small>参考观察区间：${fmt(p.buyLow)}–${fmt(p.buyHigh)}<br>
 风险观察线：${fmt(p.stop)}<br>
