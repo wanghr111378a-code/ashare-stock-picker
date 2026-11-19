@@ -39,6 +39,11 @@ small{color:#7b8490}
 <button onclick="switchTab(2)">炒股养家</button>
 </div>
 <main>
+ <div class="card">
+  <h3>全市场自动选股</h3>
+  <button class="primary" onclick="scanMarket()">开始扫描全部A股</button>
+  <p id="scanStatus" class="notice">等待扫描</p>
+</div> 
 <div class="card">
 <h3 id="strategyTitle">北京炒家策略</h3>
 <div class="notice">本版本为策略框架演示。分数仅根据手动输入的数据计算，不代表真实行情或真实交易者的私有策略。</div>
@@ -76,6 +81,60 @@ let books=[[],[],[]];
 function load(){try{books=JSON.parse(localStorage.getItem("ashare_books"))||[[],[],[]]}catch(e){books=[[],[],[]]}}
 function save(){localStorage.setItem("ashare_books",JSON.stringify(books))}
 function switchTab(i){current=i;document.querySelectorAll(".tabs button").forEach((b,j)=>b.classList.toggle("active",i===j));document.getElementById("strategyTitle").textContent=strategies[i].name;document.getElementById("strategyInfo").textContent=strategies[i].info;render()}
+async function scanMarket(){
+  const status=document.getElementById("scanStatus");
+  status.textContent="正在连接行情服务器，请稍候……";
+  try{
+    const url="https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=5000&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f2,f3,f5,f6,f8,f12,f14,f15,f16,f17,f18";
+    const response=await fetch(url);
+    if(!response.ok) throw new Error("行情服务器响应异常");
+    const result=await response.json();
+    const rows=result?.data?.diff;
+    if(!Array.isArray(rows)||rows.length===0) throw new Error("没有取得股票数据");
+    const stocks=rows.map(x=>({
+      code:String(x.f12||""),
+      name:String(x.f14||""),
+      price:Number(x.f2),
+      change:Number(x.f3),
+      amount:Number(x.f6)/10000,
+      turnover:Number(x.f8),
+      high:Number(x.f15),
+      low:Number(x.f16)
+    })).filter(s=>s.code&&s.name&&!/^(ST|\*ST|退)/i.test(s.name)&&s.price>0&&Number.isFinite(s.change)&&s.amount>0);
+    if(!stocks.length) throw new Error("没有可用的股票数据");
+    const scoreBeijing=s=>
+      (s.change>=2&&s.change<=8?30:0)+
+      (s.amount>=50000?30:s.amount>=20000?20:0)+
+      (s.turnover>=3&&s.turnover<=15?25:0)+
+      (s.price>=s.high*0.97?15:0);
+    const scoreTuixue=s=>
+      (s.change>=3&&s.change<=9?35:0)+
+      (s.amount>=30000?25:s.amount>=10000?15:0)+
+      (s.turnover>=5&&s.turnover<=20?25:0)+
+      (s.change>0?15:0);
+    const scoreYangjia=s=>
+      (s.change>=1&&s.change<=7?25:0)+
+      (s.amount>=50000?30:s.amount>=20000?20:0)+
+      (s.turnover>=2&&s.turnover<=12?25:0)+
+      (s.price>=s.low*1.03?20:0);
+    const configs=[
+      {name:"北京炒家策略",score:scoreBeijing},
+      {name:"退学炒股策略",score:scoreTuixue},
+      {name:"炒股养家策略",score:scoreYangjia}
+    ];
+    configs.forEach((cfg,i)=>{
+      books[i]=stocks.map(s=>({...s,score:cfg.score(s)}))
+        .filter(s=>s.score>=40)
+        .sort((a,b)=>b.score-a.score)
+        .slice(0,20);
+    });
+    save();
+    switchTab(current);
+    status.textContent="扫描成功："+stocks.length+"只股票；每个策略显示前20名。数据来源：东方财富公开行情，可能存在延迟。获取时间："+new Date().toLocaleString();
+  }catch(error){
+    status.textContent="行情获取失败："+error.message+"。未使用模拟数据，请稍后重试。";
+  }
+}
 function addStock(){
 let code=document.getElementById("code").value.trim(),name=document.getElementById("name").value.trim();
 let price=Number(document.getElementById("price").value),change=Number(document.getElementById("change").value),amount=Number(document.getElementById("amount").value),turnover=Number(document.getElementById("turnover").value);
