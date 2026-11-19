@@ -100,9 +100,41 @@ async function scanMarket(){
       turnover:Number(x.f8),
       high:Number(x.f15),
       low:Number(x.f16)
-    })).filter(s=>s.code&&s.name&&!/^(ST|\*ST|退)/i.test(s.name)&&s.price>0&&Number.isFinite(s.change)&&s.amount>0);
+    })).filter(s=>
+      s.code&&
+      s.name&&
+      !/^(ST|\*ST|退)/i.test(s.name)&&
+      Number.isFinite(s.price)&&
+      s.price>0&&
+      Number.isFinite(s.change)&&
+      Number.isFinite(s.amount)&&
+      s.amount>0&&
+      Number.isFinite(s.turnover)&&
+      s.turnover>=0&&
+      Number.isFinite(s.high)&&
+      Number.isFinite(s.low)&&
+      s.high>=s.price&&
+      s.low<=s.price&&
+      s.low>0
+    );
     if(!stocks.length) throw new Error("没有可用的股票数据");
-    const scoreBeijing=s=>
+        const getRiskStatus=s=>{
+      if(!Number.isFinite(s.price)||s.price<=0||
+         !Number.isFinite(s.change)||
+         !Number.isFinite(s.high)||
+         !Number.isFinite(s.low)){
+        return "行情异常";
+      }
+      const code=String(s.code);
+      const isBJ=/^(4|8|92)/.test(code);
+      const isGrowth=/^30/.test(code);
+      const isSTAR=/^68/.test(code);
+      const limit=isBJ?30:(isGrowth||isSTAR?20:10);
+      if(s.change>=limit-1) return "接近涨停";
+      if(s.change<=-limit+1) return "接近跌停";
+      return "正常";
+    };
+   const scoreBeijing=s=>
       (s.change>=2&&s.change<=8?30:0)+
       (s.amount>=50000?30:s.amount>=20000?20:0)+
       (s.turnover>=3&&s.turnover<=15?25:0)+
@@ -123,7 +155,11 @@ async function scanMarket(){
       {name:"炒股养家策略",score:scoreYangjia}
     ];
     configs.forEach((cfg,i)=>{
-      books[i]=stocks.map(s=>({...s,score:cfg.score(s)}))
+      books[i]=stocks.map(s=>({
+          ...s,
+          score:cfg.score(s),
+          risk:getRiskStatus(s)
+        }))
         .filter(s=>s.score>=40)
         .sort((a,b)=>b.score-a.score)
         .slice(0,20);
@@ -171,6 +207,7 @@ const p=getTradePlan(s);
 const fmt=v=>Number(v).toFixed(2);
 return `<div class="stock">
 <strong>${i+1}. ${safe(s.name)} (${safe(s.code)})</strong><span class="score">${s.score}分</span>
+<span class="risk">风险：${safe(s.risk||"未评估")}</span>
 <p>现价：${fmt(s.price)}元　涨幅：${Number(s.change).toFixed(2)}%</p>
 <small>成交额：${Number(s.amount).toFixed(0)}万元　换手率：${Number(s.turnover).toFixed(2)}%</small>
 <p><strong>V1.2模型参考（元）</strong></p>
